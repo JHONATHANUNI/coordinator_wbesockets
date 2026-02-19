@@ -1,0 +1,41 @@
+body{
+    font-family: Arial;
+    background:#0f172a;
+    color:white;
+    text-align:center;
+}
+
+table{
+    margin:auto;
+    border-collapse:collapse;
+    width:80%;
+    background:#1e293b;
+}
+
+th,td{
+    padding:10px;
+    border:1px solid #334155;
+}
+
+th{
+    background:#2563eb;
+}
+
+.active{
+    color:#22c55e;
+    font-weight:bold;
+}
+
+.dead{
+    color:#ef4444;
+    font-weight:bold;
+}
+
+.metrics{
+    margin-top:20px;
+    padding:15px;
+    background:#1e293b;
+    width:50%;
+    margin-left:auto;
+    margin-right:auto;
+}
