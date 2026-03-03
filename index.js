@@ -1,83 +1,191 @@
 const express = require("express")
 const cors = require("cors")
+const path = require("path")
 
 const app = express()
 const PORT = 3000
-
-// Aumentado para evitar falsos fallos por latencia/ngrok
 const TIMEOUT = 20000
 
 app.use(cors())
-const path = require("path")
 app.use(express.json())
-
-// Servir dashboard
 app.use(express.static(path.join(__dirname, "public")))
 
 let servers = {}
 let totalTimeouts = 0
+let backups = []
+let isPrimary = true
 
-// ================= REGISTRO =================
+/* ================================================= */
+/* ================= REGISTRO WORKER ================ */
+/* ================================================= */
 app.post("/register", (req, res) => {
 
-    const {id, url} = req.body
+    const { id, url } = req.body
 
-    if(!id || !url){
+    if (!id || !url) {
         return res.status(400).json({ error: "Se requiere id y url" })
     }
 
     servers[id] = {
         id,
         url,
-        lastPulse: Date.now()
+        lastPulse: Date.now(),
+        registeredAt: Date.now()
     }
 
-    console.log(`Servidor registrado: ${id} - ${url}`)
-    res.json({ message: "registrado"})
+    console.log(`Worker registrado: ${id}`)
+
+    // Replicación NO bloqueante
+    replicateToBackups()
+
+    res.json({ message: "registrado" })
 })
 
-// ================= HEARTBEAT =================
+/* ================================================= */
+/* ================= HEARTBEAT ====================== */
+/* ================================================= */
 app.post("/pulse", (req, res) => {
-    const {id} = req.body
 
-    if(!servers[id]){
-        return res.status(400).json({ error: "no se encuentra server" })
+    const { id } = req.body
+
+    if (!servers[id]) {
+        return res.status(400).json({ error: "Worker no encontrado" })
     }
 
     servers[id].lastPulse = Date.now()
-    res.json({ message: "pulso recibido"})
+
+    // Replicación NO bloqueante
+    replicateToBackups()
+
+    res.json({ message: "pulso recibido" })
 })
 
-// ================= LISTA SERVERS =================
-app.get("/servers", (req, res) => {
-    res.json(servers)
-})
-
-// ================= METRICAS =================
-app.get("/metrics", (req, res) => {
+/* ================================================= */
+/* ================= STATUS ========================= */
+/* ================================================= */
+app.get("/status", (req, res) => {
     res.json({
-        totalServers: Object.keys(servers).length,
-        totalTimeouts
+        workers: servers,
+        backups,
+        isPrimary,
+        metrics: {
+            totalTimeouts
+        }
     })
 })
 
-// ================= DETECTOR DE FALLOS =================
+/* ================================================= */
+/* ================= REGISTRO BACKUP ================ */
+/* ================================================= */
+app.post("/register-backup", (req, res) => {
+
+    const { url } = req.body
+
+    if (!url) {
+        return res.status(400).json({ error: "URL requerida" })
+    }
+
+    if (!backups.includes(url)) {
+        backups.push(url)
+        console.log(`Backup agregado: ${url}`)
+    }
+
+    res.json({ message: "Backup registrado", backups })
+})
+
+/* ================================================= */
+/* ================= SYNC WORKERS =================== */
+/* ================================================= */
+app.get("/sync-workers", (req, res) => {
+    res.json(Object.values(servers))
+})
+
+/* ================================================= */
+/* ================= REPLICATE ====================== */
+/* ================================================= */
+app.post("/replicate", (req, res) => {
+
+    const { workers, totalTimeouts: timeoutsFromPrimary } = req.body
+
+    if (!workers) {
+        return res.status(400).json({ error: "Workers requeridos" })
+    }
+
+    // Reemplazar completamente el estado (consistencia fuerte)
+    servers = {}
+
+    workers.forEach(w => {
+        servers[w.id] = w
+    })
+
+    if (timeoutsFromPrimary !== undefined) {
+        totalTimeouts = timeoutsFromPrimary
+    }
+
+    console.log("Estado sincronizado desde primario")
+
+    res.json({ message: "Replicación recibida" })
+})
+
+/* ================================================= */
+/* ========= REPLICACIÓN AUTOMÁTICA (NO BLOQUEANTE) */
+/* ================================================= */
+function replicateToBackups() {
+
+    if (!isPrimary) return
+
+    const workersArray = Object.values(servers)
+
+    backups.forEach(backupUrl => {
+
+        fetch(`${backupUrl}/replicate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                workers: workersArray,
+                totalTimeouts
+            })
+        })
+        .then(() => {
+            console.log(`Replicado a ${backupUrl}`)
+        })
+        .catch(() => {
+            console.log(`No se pudo replicar a ${backupUrl}`)
+        })
+
+    })
+}
+
+/* ================================================= */
+/* ================= DETECTOR DE FALLOS ============ */
+/* ================================================= */
 setInterval(() => {
+
     const now = Date.now()
+    let removed = false
 
     for (let id in servers) {
 
         if (now - servers[id].lastPulse > TIMEOUT) {
-            console.log(`Servidor caído eliminado: ${id}`)
+
+            console.log(`Worker eliminado por timeout: ${id}`)
+
             delete servers[id]
             totalTimeouts++
+            removed = true
         }
+    }
 
+    // Si hubo cambios, replicar
+    if (removed) {
+        replicateToBackups()
     }
 
 }, 5000)
 
-// ================= START =================
+/* ================================================= */
+/* ================= START ========================== */
+/* ================================================= */
 app.listen(PORT, () => {
     console.log(`Coordinator corriendo en ${PORT}`)
 })

@@ -2,29 +2,64 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Coordinator Dashboard</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
 
-<h1>🧠 Coordinator Monitor</h1>
+<main>
 
-<table id="serversTable">
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>URL</th>
-            <th>Último heartbeat</th>
-            <th>Estado</th>
-        </tr>
-    </thead>
-    <tbody></tbody>
-</table>
+<h1>🧠 Coordinator Monitor David Forero</h1>
 
-<div id="metrics" class="metrics"></div>
+<!-- INDICADOR PRIMARIO / BACKUP -->
+<section class="card">
+    <div id="primaryStatus" class="primary-indicator primary glow">
+        Coordinador Primario
+    </div>
+</section>
 
-<script src="dashboard.js"></script>
+<!-- REGISTRO DE BACKUP -->
+<section class="card">
+    <h2>🔁 Registrar Coordinador Backup</h2>
+    <br>
+    <input 
+        type="text" 
+        id="backupInput" 
+        placeholder="https://otro-coordinator.ngrok.io"
+    />
+    <button onclick="registerBackup()">Registrar Backup</button>
+    <button onclick="forceSync()">Forzar Sincronización</button>
+</section>
+
+<!-- TABLA DE WORKERS -->
+<section class="card">
+    <h2>🌐 Workers Registrados</h2>
+
+    <table id="serversTable">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>URL</th>
+                <th>Último heartbeat</th>
+                <th>Estado</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Se llena dinámicamente -->
+        </tbody>
+    </table>
+</section>
+
+<!-- MÉTRICAS -->
+<section id="metrics" class="metrics">
+    <!-- Se llena dinámicamente -->
+</section>
+
+</main>
+
+<script src="dashboard.js" defer></script>
 
 </body>
 </html>
