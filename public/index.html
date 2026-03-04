@@ -1,65 +1,55 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coordinator Dashboard</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <title>Coordinator Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
-
 <body>
+  <h1>⚡ Distributed Coordinator David Forero</h1>
 
-<main>
+  <div class="cards-container">
+    <div class="card"><h3>Total Servers</h3><span id="totalServers">0</span></div>
+    <div class="card"><h3>Active Servers</h3><span id="activeServers">0</span></div>
+    <div class="card"><h3>Total Timeouts</h3><span id="totalTimeouts">0</span></div>
+    <div class="card"><h3>Total Backups</h3><span id="totalBackups">0</span></div>
+    <div class="card"><h3>Coordinator Mode</h3><span id="mode">-</span></div>
+    <div class="card"><h3>Last Update</h3><span id="timestamp">-</span></div>
+  </div>
 
-<h1>🧠 Coordinator Monitor David Forero</h1>
+  <div style="margin-bottom:30px;">
+    <h2>🛡 Backup Management</h2>
 
-<!-- INDICADOR PRIMARIO / BACKUP -->
-<section class="card">
-    <div id="primaryStatus" class="primary-indicator primary glow">
-        Coordinador Primario
+    <div style="margin-bottom:15px;">
+      <input type="text" id="backupUrl" placeholder="https://backup-url.ngrok-free.app" />
+      <button onclick="registerBackup()">Register Backup</button>
+      <button onclick="forceSync()">Force Sync</button>
     </div>
-</section>
 
-<!-- REGISTRO DE BACKUP -->
-<section class="card">
-    <h2>🔁 Registrar Coordinador Backup</h2>
-    <br>
-    <input 
-        type="text" 
-        id="backupInput" 
-        placeholder="https://otro-coordinator.ngrok.io"
-    />
-    <button onclick="registerBackup()">Registrar Backup</button>
-    <button onclick="forceSync()">Forzar Sincronización</button>
-</section>
+    <ul id="backupList"></ul>
+  </div>
 
-<!-- TABLA DE WORKERS -->
-<section class="card">
-    <h2>🌐 Workers Registrados</h2>
-
-    <table id="serversTable">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>URL</th>
-                <th>Último heartbeat</th>
-                <th>Estado</th>
-            </tr>
-        </thead>
-        <tbody>
-            <!-- Se llena dinámicamente -->
-        </tbody>
+  <div>
+    <h2>🖥 Registered Workers</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>URL</th>
+          <th>Last Pulse</th>
+          <th>Pulse Count</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="serversTable"></tbody>
     </table>
-</section>
+  </div>
 
-<!-- MÉTRICAS -->
-<section id="metrics" class="metrics">
-    <!-- Se llena dinámicamente -->
-</section>
+  <div style="margin-top:40px; text-align:center; opacity:0.6; font-size:14px;">
+    Distributed System Monitor • Real-time Coordination Panel
+  </div>
 
-</main>
-
-<script src="dashboard.js" defer></script>
-
+  <script src="dashboard.js"></script>
 </body>
 </html>

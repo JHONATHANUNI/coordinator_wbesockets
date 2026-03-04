@@ -1,131 +1,147 @@
+const TIMEOUT = 20000;
+let previousServers = {};
+
 async function updateDashboard() {
-    try {
-        const response = await fetch('/status');
-        const data = await response.json();
+  try {
+    const servers = await fetch("/servers").then((r) => r.json());
+    const metrics = await fetch("/metrics").then((r) => r.json());
+    const backups = await fetch("/backups").then((r) => r.json());
+    const modeData = await fetch("/mode").then((r) => r.json());
 
-        const { workers, backups, isPrimary, metrics } = data;
+    const tbody = document.getElementById("serversTable");
+    tbody.innerHTML = "";
 
-        const tbody = document.querySelector("#serversTable tbody");
-        tbody.innerHTML = "";
+    const now = Date.now();
+    let activeCount = 0;
 
-        const now = Date.now();
-        let activeCount = 0;
+    for (const id in servers) {
+      const s = servers[id];
+      const diff = now - s.lastPulse;
 
-        const TIMEOUT = 20000; // Debe coincidir con backend
+      let statusText = "Activo";
+      let statusClass = "status-active";
 
-        const workerIds = Object.keys(workers);
+      if (diff > TIMEOUT) {
+        statusText = "Timeout";
+        statusClass = "status-dead";
+      } else if (diff > TIMEOUT * 0.6) {
+        statusText = "Inestable";
+        statusClass = "status-warning";
+        activeCount++;
+      } else {
+        activeCount++;
+      }
 
-        if (workerIds.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="4" style="text-align:center;">
-                        No hay workers registrados
-                    </td>
-                </tr>`;
-        }
+      const originBadge =
+        s.origin === "replicated"
+          ? `<span style="color:#4da6ff; font-weight:bold;">🌐 Replicado</span>`
+          : `<span style="color:#00cc88; font-weight:bold;">🏠 Local</span>`;
 
-        workerIds.forEach(id => {
-            const s = workers[id];
+      const row = `
+        <tr class="${s.origin === "replicated" ? "replicated-row" : ""}">
+          <td>${s.id}</td>
+          <td><a href="${s.url}" target="_blank">${s.url}</a></td>
+          <td>${diff} ms</td>
+          <td>${s.pulseCount || 0}</td>
+          <td class="${statusClass}">
+            <span class="pulse-dot" id="dot-${s.id}"></span>
+            ${statusText}<br>${originBadge}
+          </td>
+        </tr>`;
 
-            const diff = now - s.lastPulse;
-            const isActive = diff < TIMEOUT;
+      tbody.innerHTML += row;
 
-            if (isActive) activeCount++;
-
-            const status = isActive ? "Activo" : "Inactivo";
-            const statusClass = isActive ? "active" : "inactive";
-
-            const row = `
-                <tr>
-                    <td>${s.id}</td>
-                    <td><a href="${s.url}" target="_blank">${s.url}</a></td>
-                    <td>${diff} ms</td>
-                    <td class="${statusClass}">${status}</td>
-                </tr>`;
-
-            tbody.innerHTML += row;
-        });
-
-        const backupsList = backups.length > 0
-            ? backups.map(b => `<li>${b}</li>`).join("")
-            : "<li>No hay backups registrados</li>";
-
-        const primaryStatus = document.getElementById("primaryStatus");
-
-        if (isPrimary) {
-            primaryStatus.textContent = "Coordinador Primario";
-            primaryStatus.className = "primary-indicator primary glow";
-        } else {
-            primaryStatus.textContent = "Coordinador Backup";
-            primaryStatus.className = "primary-indicator backup";
-        }
-
-        document.getElementById("metrics").innerHTML = `
-            <h3>📊 Métricas del Sistema</h3>
-            <p>Total de workers registrados: ${workerIds.length}</p>
-            <p>Workers activos: ${activeCount}</p>
-            <p>Total de backups conocidos: ${backups.length}</p>
-            <p>Total de timeouts detectados: ${metrics.totalTimeouts || 0}</p>
-            <p>Timestamp actual: ${new Date().toLocaleString()}</p>
-            <h4>🔁 Coordinadores Backup</h4>
-            <ul>${backupsList}</ul>
-        `;
-
-    } catch (error) {
-        document.getElementById("metrics").innerHTML = `
-            <h3 style='color:red'>
-                ⚠ Error: El coordinator no responde (modo tolerancia a fallos)
-            </h3>`;
+      // Pulso
+      if (
+        previousServers[id] &&
+        (s.pulseCount || 0) > (previousServers[id].pulseCount || 0)
+      ) {
+        setTimeout(() => {
+          const dot = document.getElementById(`dot-${s.id}`);
+          if (dot) {
+            dot.classList.add("pulse-animate");
+            setTimeout(() => dot.classList.remove("pulse-animate"), 400);
+          }
+        }, 50);
+      }
     }
+
+    previousServers = JSON.parse(JSON.stringify(servers));
+
+    document.getElementById("totalServers").textContent = metrics.totalServers;
+    document.getElementById("totalBackups").textContent = backups.length;
+    document.getElementById("mode").textContent = modeData.mode;
+    document.getElementById("activeServers").textContent = activeCount;
+    document.getElementById("totalTimeouts").textContent = metrics.totalTimeouts;
+    document.getElementById("timestamp").textContent =
+      new Date().toLocaleTimeString();
+
+    const backupList = document.getElementById("backupList");
+    if (backupList) {
+      backupList.innerHTML = "";
+      backups.forEach((b) => {
+        backupList.innerHTML += `<li style="margin-bottom:6px;">🔗 ${b}</li>`;
+      });
+    }
+
+    document.getElementById("mode").style.color =
+      modeData.mode === "PRIMARY" ? "#00cc88" : "#4da6ff";
+  } catch (error) {
+    console.error("Error cargando dashboard:", error);
+    document.getElementById("mode").textContent = "SIN CONEXIÓN";
+    document.getElementById("mode").style.color = "red";
+  }
 }
 
-/* ============================= */
-/* REGISTRAR BACKUP */
-/* ============================= */
 async function registerBackup() {
-    const input = document.getElementById("backupInput");
-    const url = input.value.trim();
+  const input = document.getElementById("backupUrl");
+  const url = input.value.trim();
 
-    if (!url) {
-        alert("Ingresa una URL válida");
-        return;
+  if (!url) {
+    alert("⚠ Debes ingresar una URL de backup");
+    return;
+  }
+
+  try {
+    const response = await fetch("/register-backup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      alert("❌ Error: " + (data.error || "No se pudo registrar"));
+      return;
     }
 
-    try {
-        const res = await fetch('/register-backup', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url })
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-            throw new Error(data.error || "Error registrando backup");
-        }
-
-        input.value = "";
-        updateDashboard();
-
-    } catch (err) {
-        alert("Error registrando backup");
-    }
+    alert("✅ Backup registrado correctamente");
+    input.value = "";
+    updateDashboard();
+  } catch (err) {
+    alert("❌ No se pudo conectar con el coordinator");
+    console.error(err);
+  }
 }
 
-/* ============================= */
-/* FORZAR SINCRONIZACIÓN */
-/* ============================= */
 async function forceSync() {
-    try {
-        await fetch('/sync-workers');
-        alert("Sincronización manual ejecutada");
-    } catch (err) {
-        alert("Error forzando sincronización");
+  try {
+    const response = await fetch("/force-sync", { method: "POST" });
+    const data = await response.json();
+
+    if (!response.ok) {
+      alert("❌ Error: " + (data.error || "No se pudo sincronizar"));
+      return;
     }
+
+    alert("🔄 Sincronización completada");
+    updateDashboard();
+  } catch (err) {
+    alert("❌ El coordinator no responde");
+    console.error(err);
+  }
 }
 
-/* ============================= */
-/* AUTO REFRESH */
-/* ============================= */
 setInterval(updateDashboard, 2000);
 updateDashboard();
