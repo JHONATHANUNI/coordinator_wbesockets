@@ -2,52 +2,168 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Coordinator Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="styles.css" />
+  <title>Distributed Coordinator Jhonathan Uni</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#0b1020;
+      --card:#111831;
+      --card2:#0f1730;
+      --text:#eef3ff;
+      --muted:#9fb0d0;
+      --accent:#6d8cff;
+      --green:#27d17f;
+      --red:#ff5f6d;
+      --yellow:#ffcd4d;
+      --border:rgba(255,255,255,.08);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:radial-gradient(circle at top, #142044 0%, var(--bg) 50%);
+      color:var(--text);
+    }
+    .container{max-width:1400px;margin:0 auto;padding:28px}
+    .header,.controls,.servers-table,.metric-card,.backup-item{
+      background:linear-gradient(180deg,var(--card),var(--card2));
+      border:1px solid var(--border);
+      border-radius:18px;
+      box-shadow:0 10px 30px rgba(0,0,0,.25);
+    }
+    .header{padding:24px;margin-bottom:20px}
+    .header h1{margin:0 0 8px;font-size:30px}
+    .header p{margin:0;color:var(--muted)}
+    .metrics-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+      gap:16px;
+      margin-bottom:20px
+    }
+    .metric-card{padding:20px}
+    .metric-card h3{margin:10px 0 6px;color:var(--muted);font-size:14px;font-weight:600}
+    .metric-value{font-size:32px;font-weight:800}
+    .controls{padding:22px;margin-bottom:20px}
+    .control-group{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0 18px}
+    input{
+      flex:1;min-width:260px;
+      background:#091126;color:var(--text);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:14px 16px;
+      outline:none
+    }
+    button{
+      border:none;border-radius:12px;
+      padding:14px 18px;
+      font-weight:700;
+      cursor:pointer
+    }
+    .btn-primary{background:var(--accent);color:#fff}
+    .btn-secondary{background:#23315f;color:#fff}
+    .backup-item{padding:14px 16px;margin-bottom:10px}
+    .backup-title{display:flex;align-items:center;gap:10px}
+    .backup-meta{color:var(--muted);font-size:13px;margin-top:6px}
+    .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+    .green{background:var(--green)}
+    .red{background:var(--red)}
+    .servers-table{overflow:auto}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:14px 16px;border-bottom:1px solid var(--border);text-align:left}
+    th{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em}
+    .status{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:7px 11px;border-radius:999px;font-size:13px;font-weight:700
+    }
+    .live{background:rgba(39,209,127,.15);color:var(--green)}
+    .unstable{background:rgba(255,205,77,.15);color:var(--yellow)}
+    .dead{background:rgba(255,95,109,.15);color:var(--red)}
+    .empty-state,.empty-row{color:var(--muted);text-align:center;padding:20px}
+    .footer{padding:18px;text-align:center;color:var(--muted)}
+    .top-meta{
+      display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;color:var(--muted);font-size:14px
+    }
+    .pill{
+      background:rgba(255,255,255,.06);
+      padding:8px 12px;border-radius:999px
+    }
+    body.connected .metric-value{color:var(--green)}
+  </style>
 </head>
 <body>
-  <h1>⚡ Distributed Coordinator David Forero</h1>
-
-  <div class="cards-container">
-    <div class="card"><h3>Total Servers</h3><span id="totalServers">0</span></div>
-    <div class="card"><h3>Active Servers</h3><span id="activeServers">0</span></div>
-    <div class="card"><h3>Total Timeouts</h3><span id="totalTimeouts">0</span></div>
-    <div class="card"><h3>Total Backups</h3><span id="totalBackups">0</span></div>
-    <div class="card"><h3>Coordinator Mode</h3><span id="mode">-</span></div>
-    <div class="card"><h3>Last Update</h3><span id="timestamp">-</span></div>
-  </div>
-
-  <div style="margin-bottom:30px;">
-    <h2>🛡 Backup Management</h2>
-
-    <div style="margin-bottom:15px;">
-      <input type="text" id="backupUrl" placeholder="https://backup-url.ngrok-free.app" />
-      <button onclick="registerBackup()">Register Backup</button>
-      <button onclick="forceSync()">Force Sync</button>
+  <div class="container">
+    <div class="header">
+      <h1><i class="fas fa-network-wired"></i> Distributed Coordinator Pro</h1>
+      <p>Panel maestro para coordinación, backups y workers en tiempo real</p>
+      <div class="top-meta">
+        <div class="pill">Estado: <span id="connectionStatus">Desconectado</span></div>
+        <div class="pill">Node: <span id="nodeId">-</span></div>
+        <div class="pill">Modo: <span id="mode">-</span></div>
+        <div class="pill">Actualización: <span id="timestamp">-</span></div>
+      </div>
     </div>
 
-    <ul id="backupList"></ul>
-  </div>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <i class="fas fa-server"></i>
+        <h3>Total Workers</h3>
+        <div class="metric-value" id="totalServers">0</div>
+      </div>
+      <div class="metric-card">
+        <i class="fas fa-circle-play"></i>
+        <h3>Activos</h3>
+        <div class="metric-value" id="activeServers">0</div>
+      </div>
+      <div class="metric-card">
+        <i class="fas fa-triangle-exclamation"></i>
+        <h3>Timeouts</h3>
+        <div class="metric-value" id="totalTimeouts">0</div>
+      </div>
+      <div class="metric-card">
+        <i class="fas fa-shield-halved"></i>
+        <h3>Backups</h3>
+        <div class="metric-value" id="totalBackups">0</div>
+      </div>
+      <div class="metric-card">
+        <i class="fas fa-clipboard-list"></i>
+        <h3>Registros</h3>
+        <div class="metric-value" id="totalRegistrations">0</div>
+      </div>
+    </div>
 
-  <div>
-    <h2>🖥 Registered Workers</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>URL</th>
-          <th>Last Pulse</th>
-          <th>Pulse Count</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody id="serversTable"></tbody>
-    </table>
-  </div>
+    <div class="controls">
+      <h2><i class="fas fa-sitemap"></i> Gestión de Backups</h2>
+      <div class="control-group">
+        <input type="text" id="backupUrl" placeholder="ws://backup-coordinator:3001" />
+        <button class="btn-primary" onclick="dashboard.registerBackup()">
+          <i class="fas fa-plus"></i> Registrar Backup
+        </button>
+        <button class="btn-secondary" onclick="dashboard.forceSync()">
+          <i class="fas fa-arrows-rotate"></i> Forzar Sync
+        </button>
+      </div>
+      <div id="backupList"></div>
+    </div>
 
-  <div style="margin-top:40px; text-align:center; opacity:0.6; font-size:14px;">
-    Distributed System Monitor • Real-time Coordination Panel
+    <div class="servers-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Worker ID</th>
+            <th>URL</th>
+            <th>Último Pulso</th>
+            <th>Pulsos</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody id="serversTable"></tbody>
+      </table>
+    </div>
+
+    <div class="footer">
+      Distributed Coordinator System · 2026
+    </div>
   </div>
 
   <script src="dashboard.js"></script>

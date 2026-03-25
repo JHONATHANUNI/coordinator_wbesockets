@@ -4,13 +4,24 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.6",
-    "express": "^5.2.1"
-  }
+    "express": "^5.2.1",
+    "ws": "^8.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DavidForeroPinto/servidor_distribuido.git"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/DavidForeroPinto/servidor_distribuido/issues"
+  },
+  "homepage": "https://github.com/DavidForeroPinto/servidor_distribuido#readme"
 }
