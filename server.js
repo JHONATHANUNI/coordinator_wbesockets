@@ -55,6 +55,12 @@ let currentLeader = {
 const now = () => Date.now();
 const uid = () => crypto.randomUUID();
 
+// --------------------------------------------
+// 1) WebSocket Utility Helpers
+// --------------------------------------------
+
+// Enviar saludo de descubrimiento al peer.
+// Protocolo: hello
 function sendHello(ws) {
   safeSend(ws, {
     type: "hello",
@@ -65,6 +71,8 @@ function sendHello(ws) {
   });
 }
 
+// Enviar mensaje seguro a un socket abierto.
+// Protege contra errores de socket no abiertos.
 function safeSend(ws, payload) {
   try {
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -73,6 +81,8 @@ function safeSend(ws, payload) {
   } catch {}
 }
 
+// Enviar log al dashboard además del console local.
+// Esto es clave para la visibilidad y evaluación.
 function log(msg) {
   console.log(msg);
   broadcastDashboard({ log: String(msg) });
@@ -109,6 +119,13 @@ function redirectToLeader(ws) {
   return false;
 }
 
+// --------------------------------------------
+// 2) Leader Election & Failover
+// --------------------------------------------
+
+// Actualiza el líder en el clúster.
+// Si el nodo no es líder, limpia estado de workers para evitar conflictos.
+// Si es líder, anuncia su liderazgo a los backups y sincroniza estado.
 function updateLeader(newLeader) {
   if (!newLeader || !newLeader.id) return;
 
@@ -116,6 +133,7 @@ function updateLeader(newLeader) {
   isPrimary = currentLeader.id === NODE_ID;
 
   if (!isPrimary) {
+    // Failover seguro: el backup no debe mantener workers locales antiguos
     workers.clear();
     taskQueue = [];
     log(`[${NODE_ID}] 🔄 Cambio de líder: ahora backup (${currentLeader.id}). Workers limpios.`);
@@ -127,6 +145,7 @@ function updateLeader(newLeader) {
   pushState();
 
   if (isPrimary) {
+    // Garantiza consistencia en el cluster
     syncToBackups(buildState());
   }
 }
@@ -434,6 +453,12 @@ function reassignTask(task) {
   log(`[${NODE_ID}] 🔁 Tarea ${task.id} re-asignada a ${worker.id} (retry ${task.retries}).`);
 }
 
+// --------------------------------------------
+// 3) Task Queue y Retry
+// --------------------------------------------
+
+// Asigna todas las tareas en espera a workers activos.
+// Este módulo es fundamental para la disponibilidad (queue) y balanceo.
 function assignQueuedTasks() {
   if (!isPrimary || taskQueue.length === 0) return;
 

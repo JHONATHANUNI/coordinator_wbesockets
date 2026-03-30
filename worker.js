@@ -14,7 +14,10 @@ let ws = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 
-// Función para conectar a un coordinador
+// --------------------------------------------
+// Worker: Comunicación con Coordinador
+// --------------------------------------------
+// Conecta a un coordinador, maneja eventos de socket y registro.
 function connectToCoordinator(url) {
     console.log(`🔗 Conectando a ${url} como ${WORKER_ID}...`);
     ws = new WebSocket(url);
@@ -56,7 +59,9 @@ function connectToCoordinator(url) {
     });
 }
 
-// Manejar mensajes del coordinador
+// --------------------------------------------
+// Worker: Manejo de mensajes entrantes
+// --------------------------------------------
 function handleMessage(msg) {
     console.log(`📨 Mensaje recibido:`, msg.type);
 
@@ -82,7 +87,10 @@ function handleMessage(msg) {
     }
 }
 
-// Procesar una tarea (simulación)
+// --------------------------------------------
+// Worker: Ejecución de tarea
+// --------------------------------------------
+// Simula ejecución con duración aleatoria y envía task-result.
 function processTask(task) {
     console.log(`⚙️ Procesando tarea ${task.id}...`);
 

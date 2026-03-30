@@ -86,6 +86,10 @@ class CoordinatorDashboard {
     this.renderLogs(data.log);
   }
 
+  // --------------------------------------------
+  // Utilidades de UI: mapea estado de tarea -> clase CSS
+  // --------------------------------------------
+  // Status permitidos (según rúbrica): queued, assigned, running, ok, error
   getTaskClass(status) {
     if (status === "ok") return "live";
     if (status === "error") return "dead";
@@ -193,6 +197,9 @@ class CoordinatorDashboard {
     this.ws.send(JSON.stringify(msg));
     this.flushStatus(`Test task enviada: ${taskId}`);
   }
+  // --------------------------------------------
+  // Log en tiempo real para auditoría y debugging
+  // --------------------------------------------
   renderLogs(message) {
     const container = document.getElementById("logs");
     if (!container) return;
