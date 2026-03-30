@@ -3,6 +3,10 @@ class CoordinatorDashboard {
     this.ws = null;
     this.TIMEOUT = 20000;
     this.reconnectDelay = 2000;
+    this.workerFilter = "all";
+    this.taskFilter = "all";
+    this.searchQuery = "";
+    this.latestData = null;
     this.init();
   }
 
@@ -49,12 +53,15 @@ class CoordinatorDashboard {
   }
 
   render(data) {
+    this.latestData = data;
+
     const {
       totalServers,
       activeServers,
       totalTimeouts,
       backups,
       workers,
+      tasks,
       mode,
       timestamp,
       nodeId,
@@ -69,10 +76,134 @@ class CoordinatorDashboard {
 
     this.setText("mode", mode || "-");
     this.setText("nodeId", nodeId || "-");
+    this.setText("leaderId", data.currentLeader?.id || "-");
     this.setText("timestamp", timestamp || "-");
 
     this.renderBackups(backups || []);
     this.renderWorkers(workers || []);
+    this.renderTasks(data.tasks || []);
+    this.renderTopology(data);
+    this.renderLogs(data.log);
+  }
+
+  getTaskClass(status) {
+    if (status === "ok") return "live";
+    if (status === "error") return "dead";
+    if (status === "assigned") return "unstable";
+    if (status === "running") return "online";
+    if (status === "queued") return "unstable";
+    return "";
+  }
+
+  renderTasks(tasks) {
+    const tbody = document.getElementById("tasksTable");
+    if (!tbody) return;
+
+    if (!tasks.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4" class="empty-row">No hay tareas asignadas</td>
+        </tr>
+      `;
+      return;
+    }
+
+    let filtered = Array.from(tasks || []);
+    if (this.taskFilter === "error") {
+      filtered = filtered.filter((task) => task.status === "error");
+    }
+
+    tbody.innerHTML = filtered
+      .map((task) => {
+        const status = task.status || "-";
+        const statusClass = this.getTaskClass(status);
+
+        const duration =
+          typeof task.completedAt === "number" && typeof task.createdAt === "number"
+            ? `${task.completedAt - task.createdAt}ms`
+            : "-";
+
+        return `
+        <tr class="fade-in">
+          <td title="${this.escapeHtml(task.id)}">${this.shortId(task.id)}</td>
+          <td>${this.escapeHtml(task.type || "-")}</td>
+          <td>${this.escapeHtml(task.workerId || "-")}</td>
+          <td><span class="status ${statusClass}">${this.escapeHtml(status)}</span></td>
+          <td>${this.escapeHtml(duration)}</td>
+        </tr>
+      `;
+      })
+      .join("");
+  }
+
+  renderTopology(data) {
+    const container = document.getElementById("topologyContainer");
+    if (!container) return;
+
+    const leader = data.currentLeader || { id: "-" };
+    const backups = data.backups || [];
+    const workers = data.workers || [];
+
+    const backupList = backups
+      .map((b) => `<div class="topology-node">Coordinator ${this.escapeHtml(b.id || b.url || "?")}</div>`)
+      .join("<div class='topology-edge'>↕</div>");
+
+    const workerList = workers
+      .map((w) => `<div class="topology-node">Worker ${this.escapeHtml(w.id || "?")}</div>`)
+      .join("");
+
+    container.innerHTML = `
+      <div class="topology-node">Coordinator ${this.escapeHtml(leader.id)} (Leader)</div>
+      <div class="topology-edge">↕</div>
+      <div class="topology-sublist">
+        ${backupList || '<div class="topology-node">Coordinator B (no backups)</div>'}
+      </div>
+      <div class="topology-edge">↕</div>
+      <div class="topology-sublist">
+        ${workerList || '<div class="topology-node">No workers</div>'}
+      </div>
+    `;
+  }
+  filterWorkers(filter) {
+    this.workerFilter = filter;
+    this.renderWorkers(this.latestData?.workers || []);
+  }
+
+  filterTasks(filter) {
+    this.taskFilter = filter;
+    this.renderTasks(this.latestData?.tasks || []);
+  }
+
+  sendTestTask() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.flushStatus('No conectado, no se pudo enviar task');
+      return;
+    }
+
+    const taskId = `test-${Date.now()}`;
+    const msg = {
+      type: 'task-assign',
+      data: {
+        taskId,
+        type: 'test',
+        payload: { source: 'dashboard', random: Math.random().toString(36).slice(2) }
+      }
+    };
+
+    this.ws.send(JSON.stringify(msg));
+    this.flushStatus(`Test task enviada: ${taskId}`);
+  }
+  renderLogs(message) {
+    const container = document.getElementById("logs");
+    if (!container) return;
+    if (!message) return;
+
+    const entry = document.createElement("div");
+    entry.className = "log-entry";
+    entry.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+
+    container.appendChild(entry);
+    container.scrollTop = container.scrollHeight;
   }
 
   updateMetric(id, value) {
@@ -118,7 +249,22 @@ class CoordinatorDashboard {
     const tbody = document.getElementById("serversTable");
     if (!tbody) return;
 
-    if (!workers.length) {
+    let filtered = Array.from(workers || []);
+
+    if (this.workerFilter === "active") {
+      filtered = filtered.filter((w) => this.getWorkerStatus(w).label === "Activo");
+    } else if (this.workerFilter === "down") {
+      filtered = filtered.filter((w) => this.getWorkerStatus(w).label === "Muerto");
+    } else if (this.workerFilter === "leader") {
+      filtered = filtered.filter((w) => w.id === this.latestData?.currentLeader?.id);
+    }
+
+    if (this.searchQuery && this.searchQuery.trim()) {
+      const q = this.searchQuery.trim().toLowerCase();
+      filtered = filtered.filter((w) => (w.id || "").toLowerCase().includes(q) || (w.url || "").toLowerCase().includes(q));
+    }
+
+    if (!filtered.length) {
       tbody.innerHTML = `
         <tr>
           <td colspan="5" class="empty-row">No hay workers registrados</td>
@@ -127,12 +273,16 @@ class CoordinatorDashboard {
       return;
     }
 
-    tbody.innerHTML = workers
+    tbody.innerHTML = filtered
       .map((w) => {
         const status = this.getWorkerStatus(w);
+        let role = "";
+        if (w.id === this.latestData?.currentLeader?.id) {
+          role = " 👑";
+        }
         return `
           <tr>
-            <td title="${this.escapeHtml(w.id)}">${this.shortId(w.id)}</td>
+            <td title="${this.escapeHtml(w.id)}">${this.shortId(w.id)}${role}</td>
             <td>${this.escapeHtml(w.url || "-")}</td>
             <td>${this.formatAgo(w.lastPulse)}</td>
             <td>${w.pulseCount || 0}</td>
@@ -188,10 +338,18 @@ class CoordinatorDashboard {
       }
     });
 
-    const input = document.getElementById("backupUrl");
-    if (input) {
-      input.addEventListener("keydown", (e) => {
+    const backupInput = document.getElementById("backupUrl");
+    if (backupInput) {
+      backupInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") this.registerBackup();
+      });
+    }
+
+    const workerSearch = document.getElementById("workerSearch");
+    if (workerSearch) {
+      workerSearch.addEventListener("input", (e) => {
+        this.searchQuery = e.target.value.toLowerCase();
+        this.renderWorkers(this.latestData?.workers || []);
       });
     }
   }

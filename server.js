@@ -18,6 +18,8 @@ const FAILOVER_GRACE = 15000; // 🔥 tiempo extra al volverse primary
 let becamePrimaryAt = null;
 const HEARTBEAT_INTERVAL = Number(process.env.HEARTBEAT_INTERVAL || 5000);
 const SYNC_INTERVAL = Number(process.env.SYNC_INTERVAL || 3000);
+const MY_PRIORITY = Math.floor(Math.random() * 100) + 1;
+
 
 // ================= FAILOVER =================
 let lastPrimaryPulse = Date.now();
@@ -33,14 +35,35 @@ app.get("/", (req, res) => {
 
 let workers = new Map();
 let backups = new Map();
+let tasks = new Map();
+let taskQueue = [];
+let peers = new Map(); // reemplaza backups conceptualmente
 let dashboardClients = new Set();
 let backupConnections = new Map();
 let totalTimeouts = 0;
 let totalRegistrations = 0;
 let lastSyncAt = null;
 
+
+let currentLeader = {
+  id: NODE_ID,
+  url: PUBLIC_URL,
+  priority: Math.floor(Math.random() * 100) + 1
+};
+
+
 const now = () => Date.now();
 const uid = () => crypto.randomUUID();
+
+function sendHello(ws) {
+  safeSend(ws, {
+    type: "hello",
+    data: {
+      id: NODE_ID,
+      url: PUBLIC_URL
+    }
+  });
+}
 
 function safeSend(ws, payload) {
   try {
@@ -48,6 +71,64 @@ function safeSend(ws, payload) {
       ws.send(JSON.stringify(payload));
     }
   } catch {}
+}
+
+function log(msg) {
+  console.log(msg);
+  broadcastDashboard({ log: String(msg) });
+}
+
+function announceLeader() {
+  for (const peer of peers.values()) {
+    if (peer.ws && peer.ws.readyState === WebSocket.OPEN) {
+      safeSend(peer.ws, {
+        type: "leader-announce",
+        data: {
+          leaderId: NODE_ID,
+          leaderUrl: PUBLIC_URL,
+          priority: currentLeader.priority
+        }
+      });
+    }
+  }
+}
+
+function redirectToLeader(ws) {
+  if (currentLeader && currentLeader.url && currentLeader.id !== NODE_ID) {
+    safeSend(ws, {
+      type: "redirect",
+      data: currentLeader
+    });
+    return true;
+  }
+
+  safeSend(ws, {
+    type: "error",
+    message: "No hay líder disponible"
+  });
+  return false;
+}
+
+function updateLeader(newLeader) {
+  if (!newLeader || !newLeader.id) return;
+
+  currentLeader = newLeader;
+  isPrimary = currentLeader.id === NODE_ID;
+
+  if (!isPrimary) {
+    workers.clear();
+    taskQueue = [];
+    log(`[${NODE_ID}] 🔄 Cambio de líder: ahora backup (${currentLeader.id}). Workers limpios.`);
+  } else {
+    log(`[${NODE_ID}] 🔄 Cambio de líder: ahora PRIMARY`);
+    announceLeader();
+  }
+
+  pushState();
+
+  if (isPrimary) {
+    syncToBackups(buildState());
+  }
 }
 
 function getWorkerArray() {
@@ -78,13 +159,15 @@ function buildState() {
     nodeId: NODE_ID,
     mode: isPrimary ? "PRIMARY" : "BACKUP",
     timestamp: new Date().toISOString(),
+    currentLeader,
     totalServers: workers.size,
     activeServers,
     totalTimeouts,
     totalRegistrations,
     lastSyncAt,
     workers: getWorkerArray(),
-    backups: getBackupArray()
+    backups: getBackupArray(),
+    tasks: Array.from(tasks.values())
   };
 }
 
@@ -126,10 +209,13 @@ function connectToBackup(url) {
   ws.on("open", () => {
     backupConnections.set(url, ws);
     // 🤝 Handshake entre coordinadores
+
 safeSend(ws, {
-  type: "coordinator_hello",
-  nodeId: NODE_ID,
-  isPrimary
+  type: "hello",
+  data: {
+    id: NODE_ID,
+    url: PUBLIC_URL
+  }
 });
     const prev = backups.get(url) || {
       id: uid(),
@@ -151,7 +237,7 @@ safeSend(ws, {
     });
 
     pushState();
-    console.log(`[${NODE_ID}] Conectado a backup: ${url}`);
+    log(`[${NODE_ID}] Conectado a backup: ${url}`);
   });
 
   ws.on("message", (msg) => {
@@ -184,6 +270,13 @@ safeSend(ws, {
 }
 
 function handleRegister(data, ws) {
+  if (!isPrimary) {
+    if (redirectToLeader(ws)) {
+      log(`[${NODE_ID}] 🔀 Redirigiendo worker al líder ${currentLeader.id}`);
+      return;
+    }
+  }
+
 let id = String(data.id || "").trim();
 const clientIp = ws._socket?.remoteAddress || "unknown";
 const url = String(data.url || clientIp).trim();
@@ -220,19 +313,21 @@ if (existingWorker) {
     lastPulse: now()
   });
 
-  console.log(`[${NODE_ID}] 🔁 Worker reconectado: ${id}`);
+  log(`[${NODE_ID}] 🔁 Worker reconectado: ${id}`);
 } else {
   const existing = workers.get(id);
 
-  workers.set(id, {
-    id,
-    url,
-    ws,
-    lastPulse: now(),
-    pulseCount: existing ? existing.pulseCount || 0 : 0
-  });
+ workers.set(id, {
+  id,
+  url,
+  ws,
+  lastPulse: now(),
+  pulseCount: existing ? existing.pulseCount || 0 : 0,
+  capabilities: data.capabilities || [],
+  load: 0
+});
 
-  console.log(`[${NODE_ID}] 🆕 Worker nuevo: ${id}`);
+  log(`[${NODE_ID}] 🆕 Worker nuevo: ${id}`);
 }
 
   totalRegistrations++;
@@ -244,8 +339,9 @@ if (existingWorker) {
     backups: getBackupArray()
   });
 
-console.log(`[${NODE_ID}] Worker activo: ${id}`);
+log(`[${NODE_ID}] Worker activo: ${id}`);
   pushState();
+  assignQueuedTasks();
 }
 
 
@@ -271,6 +367,7 @@ function handlePulse(data, ws) {
 }
 
   // ✅ actualizar datos
+  worker.load = data.load ?? worker.load ?? 0;
   worker.lastPulse = now();
   worker.pulseCount = (worker.pulseCount || 0) + 1;
   worker.ws = ws;
@@ -282,9 +379,92 @@ function handlePulse(data, ws) {
   });
 
   pushState();
+  assignQueuedTasks();
+}
+// FUNCIÓN PARA ELEGIR WORKER MEJOR 
+// (ejemplo simple: el menos cargado que esté vivo y tenga la capacidad requerida) 
+
+function selectBestWorker(taskType) {
+  const candidates = Array.from(workers.values())
+    .filter(w =>
+      now() - w.lastPulse <= TIMEOUT &&
+      w.capabilities?.includes(taskType)
+    )
+    .sort((a, b) => (a.load || 0) - (b.load || 0));
+
+  return candidates[0] || null;
 }
 
+function ensureTaskHistoryLimit() {
+  while (tasks.size > 50) {
+    const oldest = tasks.keys().next().value;
+    if (!oldest) break;
+    tasks.delete(oldest);
+    log(`[${NODE_ID}] 🗑️ Eliminando tarea antigua: ${oldest}`);
+  }
+}
 
+function reassignTask(task) {
+  if (!task || !task.id) return;
+  task.retries = (task.retries || 0) + 1;
+
+  if (task.retries >= 3) {
+    task.status = "failed";
+    log(`[${NODE_ID}] ❌ Tarea ${task.id} alcanzó max retries (${task.retries}).`);
+    return;
+  }
+
+  const worker = selectBestWorker(task.type);
+  if (!worker) {
+    task.status = "queued";
+    taskQueue.push(task);
+    log(`[${NODE_ID}] 🔁 Tarea ${task.id} en cola por reintento ${task.retries}.`);
+    return;
+  }
+
+  task.status = "assigned";
+  task.workerId = worker.id;
+  task.assignedAt = now();
+
+  safeSend(worker.ws, {
+    type: "task-assign",
+    data: { taskId: task.id, type: task.type, payload: task.payload }
+  });
+
+  log(`[${NODE_ID}] 🔁 Tarea ${task.id} re-asignada a ${worker.id} (retry ${task.retries}).`);
+}
+
+function assignQueuedTasks() {
+  if (!isPrimary || taskQueue.length === 0) return;
+
+  while (taskQueue.length > 0) {
+    const nextTask = taskQueue[0];
+    const worker = selectBestWorker(nextTask.type);
+
+    if (!worker) break;
+
+    taskQueue.shift();
+    tasks.set(nextTask.id, {
+      ...nextTask,
+      status: "assigned",
+      workerId: worker.id,
+      assignedAt: now()
+    });
+
+    ensureTaskHistoryLimit();
+
+    safeSend(worker.ws, {
+      type: "task-assign",
+      data: { taskId: nextTask.id, type: nextTask.type, payload: nextTask.payload }
+    });
+
+    log(`[${NODE_ID}] 🔁 Tarea en cola asignada: ${nextTask.id} -> ${worker.id}`);
+  }
+
+  if (taskQueue.length === 0) {
+    pushState();
+  }
+}
 
 function handleRegisterBackup(data, ws) {
   const url = String(data.url || "").trim();
@@ -330,6 +510,7 @@ function handleRegisterBackup(data, ws) {
 
 
 wss.on("connection", (ws, req) => {
+  sendHello(ws);
   const remote = req.socket.remoteAddress || "unknown";
   console.log(`[${NODE_ID}] Conexión entrante desde ${remote}`);
 
@@ -340,6 +521,7 @@ wss.on("connection", (ws, req) => {
       const data = JSON.parse(msg.toString());
 
       switch (data.type) {
+
         case "dashboard_connect":
           dashboardClients.add(ws);
           safeSend(ws, {
@@ -347,6 +529,154 @@ wss.on("connection", (ws, req) => {
             ...buildState()
           });
           break;
+
+case "hello":
+  const { id, url } = data.data;
+
+  console.log(`[${NODE_ID}] 🤝 HELLO de ${id}`);
+
+  // guardar peer
+ peers.set(url, {
+  id,
+  url,
+  ws,
+  lastSeen: Date.now()
+});
+
+  // responder welcome
+  safeSend(ws, {
+    type: "welcome",
+    data: {
+      id: NODE_ID,
+      knownPeers: Array.from(peers.values()),
+      leader: currentLeader
+    }
+  });
+
+  break;
+
+ case "welcome":
+  const { knownPeers, leader } = data.data;
+
+  console.log(`[${NODE_ID}] 📡 WELCOME recibido`);
+
+  // guardar peers
+  for (const p of knownPeers) {
+    if (p.url !== PUBLIC_URL && !peers.has(p.url)) {
+     const existing = peers.get(p.url);
+
+     peers.set(p.url, {
+  ...p,
+  ws: existing?.ws || null,
+  lastSeen: Date.now()
+});
+
+      // conectarse automáticamente 🔥
+      connectToBackup(p.url);
+    }
+  }
+
+  // aceptar líder si es mejor
+  if (leader && leader.priority > currentLeader.priority) {
+    updateLeader(leader);
+  }
+
+  break;
+
+case "leader-announce":
+  const incoming = data.data;
+
+  if (incoming.priority > currentLeader.priority) {
+    updateLeader({
+      id: incoming.leaderId,
+      url: incoming.leaderUrl,
+      priority: incoming.priority
+    });
+  }
+
+  break;
+  case "task-assign":
+  if (!isPrimary) {
+    return safeSend(ws, {
+      type: "redirect",
+      data: currentLeader
+    });
+  }
+
+  const { taskId, type, payload } = data.data;
+
+  const worker = selectBestWorker(type);
+
+  if (!worker) {
+    // Cola de tareas (no hay worker disponible)
+    const queuedTask = {
+      id: taskId,
+      type,
+      payload,
+      status: "queued",
+      createdAt: Date.now(),
+      retries: 0
+    };
+
+    taskQueue.push(queuedTask);
+    tasks.set(taskId, queuedTask);
+    ensureTaskHistoryLimit();
+
+    log(`[${NODE_ID}] 🧾 Tarea en cola: ${taskId}`);
+
+    return safeSend(ws, {
+      type: "queued",
+      data: { message: "Sin workers disponibles, tarea en cola" }
+    });
+  }
+
+  // 🔥 guardar y asignar tarea
+  tasks.set(taskId, {
+    id: taskId,
+    type,
+    payload,
+    status: "assigned",
+    workerId: worker.id,
+    createdAt: Date.now(),
+    assignedAt: Date.now(),
+    retries: 0
+  });
+  ensureTaskHistoryLimit();
+
+  safeSend(worker.ws, {
+    type: "task-assign",
+    data: { taskId, type, payload }
+  });
+
+  log(`[${NODE_ID}] 🧠 Tarea enviada a ${worker.id}`);
+  break;
+
+case "task-result":
+  const result = data.data;
+  const task = tasks.get(result.taskId);
+
+  if (task) {
+    task.status = result.status;
+    task.result = result.result || null;
+    task.error = result.error || null;
+    task.completedAt = Date.now();
+
+    if (result.status === "error") {
+      task.retries = (task.retries || 0) + 1;
+      if (task.retries < 3) {
+        reassignTask(task);
+      } else {
+        task.status = "failed";
+        log(`[${NODE_ID}] 💀 Tarea ${task.id} falló definitivamente tras ${task.retries} intentos.`);
+      }
+    }
+
+    ensureTaskHistoryLimit();
+  }
+
+  log(`[${NODE_ID}] ✅ Resultado tarea: ${result.taskId} (${result.status})`);
+  break;
+
 
         case "register":
           handleRegister(data, ws);
@@ -370,12 +700,14 @@ wss.on("connection", (ws, req) => {
         case "sync_state":
           if (!isPrimary && data.data) {
             const incoming = data.data;
-workers = new Map(
-  (incoming.workers || []).map((w) => [
-    w.id,
-    { ...w, ws: null, inherited: true }
-  ])
-);            backups = new Map((incoming.backups || []).map((b) => [b.url, b]));
+            workers = new Map(
+              (incoming.workers || []).map((w) => [
+                w.id,
+                { ...w, ws: null, inherited: true }
+              ])
+            );
+            backups = new Map((incoming.backups || []).map((b) => [b.url, b]));
+            tasks = new Map((incoming.tasks || []).map((t) => [t.id, t]));
             totalTimeouts = incoming.totalTimeouts || 0;
             totalRegistrations = incoming.totalRegistrations || totalRegistrations;
             lastSyncAt = new Date().toISOString();
@@ -399,9 +731,20 @@ case "primary_heartbeat":
     currentPrimaryId = data.nodeId;
   }
   break;
+  
+  case "ping":
+  safeSend(ws, {
+    type: "pong",
+    data: { message: "pong" }
+  });
+  break;
 
 case "pong":
-  ws.isAlive = true;
+  for (const peer of peers.values()) {
+    if (peer.ws === ws) {
+      peer.lastSeen = Date.now();
+    }
+  }
   break;
 
         default:
@@ -442,7 +785,7 @@ const heartbeatTimer = setInterval(() => {
     if (t - worker.lastPulse > TIMEOUT) {
       workers.delete(id);
       totalTimeouts++;
-      console.log(`[${NODE_ID}] Timeout worker: ${id}`);
+      log(`[${NODE_ID}] Timeout worker: ${id}`);
     }
   }
 }
@@ -461,23 +804,26 @@ const heartbeatTimer = setInterval(() => {
 
 // ================= FAILOVER AUTOMÁTICO =================
 setInterval(() => {
-  if (!isPrimary) {
-    const nowTime = Date.now();
+  const nowTime = Date.now();
 
-    if (nowTime - lastPrimaryPulse > PRIMARY_TIMEOUT) {
-      console.log(`[${NODE_ID}] 🚨 PRIMARY CAÍDO`);
+  if (currentLeader.id !== NODE_ID) {
+    const leaderPeer = Array.from(peers.values()).find(
+      p => p.id === currentLeader.id
+    );
 
-     if (currentPrimaryId !== NODE_ID) {
-  isPrimary = true;
-  currentPrimaryId = NODE_ID;
-  becamePrimaryAt = Date.now();
+    if (!leaderPeer || nowTime - leaderPeer.lastSeen > 5000) {
+      log("🚨 líder caído → nueva elección");
 
-  console.log(`[${NODE_ID}] 👑 AHORA SOY PRIMARY`);
-  pushState();
-}
+      currentLeader = {
+        id: NODE_ID,
+        url: PUBLIC_URL,
+priority: MY_PRIORITY      };
+
+      isPrimary = true;
+      announceLeader();
     }
   }
-}, 5000);
+}, 3000);
 
 const backupSyncTimer = setInterval(() => {
   if (isPrimary) {
@@ -487,18 +833,26 @@ const backupSyncTimer = setInterval(() => {
 
 // ================= HEARTBEAT ENTRE COORDINADORES =================
 setInterval(() => {
-  if (isPrimary) {
-    for (const [url, ws] of backupConnections.entries()) {
-      if (ws.readyState === WebSocket.OPEN) {
-        safeSend(ws, {
-          type: "primary_heartbeat",
-          nodeId: NODE_ID,
-          ts: Date.now()
-        });
-      }
+  for (const peer of peers.values()) {
+    if (peer.ws && peer.ws.readyState === WebSocket.OPEN) {
+      safeSend(peer.ws, {
+        type: "ping",
+        data: { message: "ping" }
+      });
     }
   }
-}, 3000);
+}, 2000);
+
+setInterval(() => {
+  const nowTime = Date.now();
+
+  for (const [url, peer] of peers.entries()) {
+    if (nowTime - peer.lastSeen > 8000) {
+      console.log(`[${NODE_ID}] ❌ Peer caído: ${peer.id}`);
+      peers.delete(url);
+    }
+  }
+}, 4000);
 
 wss.on("close", () => {
   clearInterval(heartbeatTimer);

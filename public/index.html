@@ -7,34 +7,244 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
   <style>
     :root{
-      --bg:#0b1020;
-      --card:#111831;
-      --card2:#0f1730;
-      --text:#eef3ff;
-      --muted:#9fb0d0;
-      --accent:#6d8cff;
-      --green:#27d17f;
-      --red:#ff5f6d;
-      --yellow:#ffcd4d;
-      --border:rgba(255,255,255,.08);
+      --bg:#040b17;
+      --card:#0f1a33;
+      --card2:#111c3a;
+      --text:#eaf0ff;
+      --muted:#8da3c6;
+      --accent:#5fa8ff;
+      --accent2:#6d7eff;
+      --green:#33cca5;
+      --red:#ff6b7a;
+      --yellow:#f9d67f;
+      --border:rgba(111,156,223,.25);
+      --shadow:0 16px 45px rgba(6,14,30,.38);
+      --radius:20px;
     }
+
     *{box-sizing:border-box}
-    body{
+    body {
       margin:0;
-      font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-      background:radial-gradient(circle at top, #142044 0%, var(--bg) 50%);
-      color:var(--text);
+      font-family:"Inter", "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(circle at 20% 0%, #12253f 0%, #071025 30%, #040a16 100%);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.4;
     }
-    .container{max-width:1400px;margin:0 auto;padding:28px}
-    .header,.controls,.servers-table,.metric-card,.backup-item{
-      background:linear-gradient(180deg,var(--card),var(--card2));
-      border:1px solid var(--border);
-      border-radius:18px;
-      box-shadow:0 10px 30px rgba(0,0,0,.25);
+
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 32px 24px 40px;
+      z-index: 1;
     }
-    .header{padding:24px;margin-bottom:20px}
-    .header h1{margin:0 0 8px;font-size:30px}
-    .header p{margin:0;color:var(--muted)}
+
+    .glass-card {
+      background: rgba(15, 26, 56, 0.75);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .header,
+    .controls,
+    .servers-table,
+    .metric-card,
+    .backup-item,
+    .topology-panel,
+    .logs-panel {
+      border-radius: var(--radius);
+    }
+
+    .header {
+      padding: 24px 26px;
+      margin-bottom: 20px;
+      background: linear-gradient(145deg, rgba(20,36,65,.88), rgba(12,23,45,.85));
+      border: 1px solid rgba(93, 121, 185, .25);
+      box-shadow: 0 16px 40px rgba(0,0,0,.32);
+    }
+
+    .header h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.75rem, 2.5vw, 2.6rem);
+      letter-spacing: .03em;
+      text-transform: uppercase;
+    }
+
+    .header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .metric-card {
+      padding: 18px;
+      background: rgba(24, 41, 74, 0.78);
+      border: 1px solid rgba(110, 154, 236, .2);
+      box-shadow: 0 10px 28px rgba(2,12,28,.3);
+      transition: transform .25s ease, box-shadow .25s ease;
+    }
+
+    .metric-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 15px 35px rgba(2,12,28,.45);
+    }
+
+    .metric-card h3 {
+      margin: 8px 0 6px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      font-size: 2.55rem;
+      font-weight: 900;
+      color: var(--accent);
+      transition: transform .25s ease, color .3s ease;
+    }
+
+    .controls {
+      padding: 18px;
+      margin-bottom: 20px;
+      background: rgba(14, 29, 56, .65);
+      border: 1px solid rgba(107, 147, 240, .2);
+      box-shadow: 0 10px 30px rgba(1, 6, 17, .38);
+    }
+
+    .control-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 12px 0 14px;
+      align-items: center;
+    }
+
+    input,
+    button {
+      font-size: 0.94rem;
+      outline: none;
+      transition: all .24s ease;
+    }
+
+    input {
+      flex: 1;
+      min-width: 190px;
+      background: rgba(15, 26, 48, .85);
+      color: var(--text);
+      border: 1px solid rgba(125, 165, 255, .25);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+
+    button {
+      border: 1px solid transparent;
+      border-radius: 12px;
+      padding: 10px 16px;
+      font-weight: 700;
+      cursor: pointer;
+      color: #fff;
+      min-width: 110px;
+      background: linear-gradient(140deg, #597cf6, #4aaafa);
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 20px rgba(12, 35, 95, .4);
+    }
+
+    .btn-secondary {
+      background: linear-gradient(145deg, #364f7f, #4a5a94);
+    }
+
+    .servers-table, .topology-panel, .logs-panel {
+      overflow: auto;
+      background: rgba(12, 24, 45, .84);
+      border: 1px solid rgba(99, 131, 198, .2);
+      box-shadow: 0 12px 32px rgba(0,0,0,.26);
+      padding: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      min-width: 680px;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(97, 142, 196, .22);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      background: rgba(12,22,40,.62);
+    }
+
+    td { color: #d7e2fc; }
+
+    .status {
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:7px 11px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:800;
+      transition: all .3s ease;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .live{background:rgba(44,226,164,.2);color:var(--green);}
+    .unstable{background:rgba(255,205,77,.2);color:var(--yellow);}
+    .dead{background:rgba(255,95,109,.2);color:var(--red);}
+    .online{background:rgba(94,160,255,.2);color:#a1d3ff;}
+
+    .fade-in { animation: fadeIn .35s ease both; }
+    .empty-state, .empty-row { color: var(--muted); text-align:center; padding:20px; }
+
+    .topology-panel {
+      padding: 16px;
+      border-radius: var(--radius);
+    }
+
+    .topology-tree, .logs-panel {
+      font-family: "Fira Code", monospace;
+    }
+
+    .logs-panel {
+      margin: 8px;
+      background: rgba(3, 4, 10, .42);
+      border: 1px solid rgba(86, 110, 190, .24);
+      max-height: 230px;
+    }
+
+    .log-entry { margin-bottom: 5px; font-size: 0.86rem; }
+
+    .pill { background: rgba(29, 42, 73, .54); padding: 8px 12px; border-radius: 999px; font-size: 0.82rem; }
+
+    .top-meta{ display:flex; gap: 14px; flex-wrap:wrap; margin-top:12px; color: var(--muted); }
+
+    .footer{ padding: 16px; text-align: center; color: var(--muted); }
+
     .metrics-grid{
       display:grid;
       grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
@@ -74,13 +284,37 @@
     th{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.04em}
     .status{
       display:inline-flex;align-items:center;gap:8px;
-      padding:7px 11px;border-radius:999px;font-size:13px;font-weight:700
+      padding:7px 11px;border-radius:999px;font-size:13px;font-weight:700;
+      transition: all 0.3s ease;
     }
-    .live{background:rgba(39,209,127,.15);color:var(--green)}
+    .live{background:rgba(39,209,127,.15);color:var(--green); animation: pulseGreen 1.2s ease-in-out infinite;}
     .unstable{background:rgba(255,205,77,.15);color:var(--yellow)}
     .dead{background:rgba(255,95,109,.15);color:var(--red)}
+    .online{background:rgba(79,143,255,.15);color:#66bfff}
+    .fade-in{animation: fadeIn 0.35s ease;
+      transform-origin: top center;
+    }
     .empty-state,.empty-row{color:var(--muted);text-align:center;padding:20px}
+    .metric-value{transition: transform 0.25s ease, color 0.3s ease;}
+
+    @keyframes pulseGreen {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(39,209,127,0.45); }
+      50% { box-shadow: 0 0 16px 6px rgba(39,209,127,0.12); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
     .footer{padding:18px;text-align:center;color:var(--muted)}
+    .topology-panel{padding:20px;margin-bottom:20px;background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--border);border-radius:18px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .topology-panel h2{margin:0 0 12px;font-size:20px}
+    .topology-tree{font-family:monospace;line-height:1.5;font-size:14px;color:var(--text)}
+    .topology-node{padding:8px 12px;border:1px solid var(--border);border-radius:12px;margin:4px 0;display:inline-block;background:rgba(255,255,255,.04)}
+    .topology-edge{margin:2px 0;text-align:center;}
+    .topology-sublist{margin-left:24px;}
+    .logs-panel{background:rgba(0,0,0,0.25);border:1px solid var(--border);border-radius:12px;padding:12px;min-height:120px;max-height:220px;overflow-y:auto;font-size:13px;line-height:1.4;color:#dce6ff;}
+    .log-entry{margin-bottom:6px;}
     .top-meta{
       display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;color:var(--muted);font-size:14px
     }
@@ -99,6 +333,7 @@
       <div class="top-meta">
         <div class="pill">Estado: <span id="connectionStatus">Desconectado</span></div>
         <div class="pill">Node: <span id="nodeId">-</span></div>
+        <div class="pill">Líder: <span id="leaderId">-</span></div>
         <div class="pill">Modo: <span id="mode">-</span></div>
         <div class="pill">Actualización: <span id="timestamp">-</span></div>
       </div>
@@ -133,7 +368,7 @@
     </div>
 
     <div class="controls">
-      <h2><i class="fas fa-sitemap"></i> Gestión de Backups</h2>
+      <h2><i class="fas fa-sitemap"></i> Control de Sistema</h2>
       <div class="control-group">
         <input type="text" id="backupUrl" placeholder="ws://backup-coordinator:3001" />
         <button class="btn-primary" onclick="dashboard.registerBackup()">
@@ -143,7 +378,26 @@
           <i class="fas fa-arrows-rotate"></i> Forzar Sync
         </button>
       </div>
+      <div class="control-group">
+        <button class="btn-secondary" onclick="dashboard.filterWorkers('all')">Todos</button>
+        <button class="btn-secondary" onclick="dashboard.filterWorkers('active')">🟢 Activos</button>
+        <button class="btn-secondary" onclick="dashboard.filterWorkers('down')">🔴 Caídos</button>
+        <button class="btn-secondary" onclick="dashboard.filterWorkers('leader')">👑 Líder</button>
+        <button class="btn-secondary" onclick="dashboard.filterTasks('error')">🛑 Solo errores</button>
+        <input id="workerSearch" placeholder="Buscar worker..." />
+        <button class="btn-primary" onclick="dashboard.sendTestTask()">Test Task</button>
+      </div>
       <div id="backupList"></div>
+    </div>
+
+    <div class="topology-panel">
+      <h2>🌐 Topología</h2>
+      <div id="topologyContainer" class="topology-tree">Cargando topología...</div>
+    </div>
+
+    <div class="servers-table">
+      <h2>🧾 Logs</h2>
+      <div id="logs" class="logs-panel">Inicializando logs...</div>
     </div>
 
     <div class="servers-table">
@@ -158,6 +412,22 @@
           </tr>
         </thead>
         <tbody id="serversTable"></tbody>
+      </table>
+    </div>
+
+    <div class="servers-table">
+      <h2>🧠 Tareas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Tipo</th>
+            <th>Worker</th>
+            <th>Estado</th>
+            <th>Duración</th>
+          </tr>
+        </thead>
+        <tbody id="tasksTable"></tbody>
       </table>
     </div>
 
