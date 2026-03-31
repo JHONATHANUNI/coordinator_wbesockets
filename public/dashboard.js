@@ -178,25 +178,62 @@ class CoordinatorDashboard {
     this.renderTasks(this.latestData?.tasks || []);
   }
 
-  sendTestTask() {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      this.flushStatus('No conectado, no se pudo enviar task');
-      return;
-    }
+sendTestTask(type) {
+  if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
-    const taskId = `test-${Date.now()}`;
-    const msg = {
-      type: 'task-assign',
-      data: {
-        taskId,
-        type: 'test',
-        payload: { source: 'dashboard', random: Math.random().toString(36).slice(2) }
-      }
-    };
+  const taskId = `test-${Date.now()}`;
 
-    this.ws.send(JSON.stringify(msg));
-    this.flushStatus(`Test task enviada: ${taskId}`);
+  let payload = {};
+
+  if (type === 'stats_compute') {
+    payload = { numbers: [10, 20, 30] };
   }
+
+  if (type === 'search_text') {
+    payload = {
+      text: 'hola mundo hola',
+      query: 'hola'
+    };
+  }
+
+  if (type === 'http_latency') {
+    payload = {
+      url: 'https://google.com'
+    };
+  }
+
+  if (type === 'math_compute') {
+    payload = {
+      operation: 'add',
+      a: 5,
+      b: 10
+    };
+  }
+
+  if (type === 'http_fetch') {
+    payload = {
+      url: 'https://jsonplaceholder.typicode.com/todos/1'
+    };
+  }
+
+  if (type === 'vector_distance') {
+    payload = {
+      a: [0, 0],
+      b: [3, 4]
+    };
+  }
+
+  const msg = {
+    type: 'task-assign',
+    data: {
+      taskId,
+      type,
+      payload
+    }
+  };
+
+  this.ws.send(JSON.stringify(msg));
+}
   // --------------------------------------------
   // Log en tiempo real para auditoría y debugging
   // --------------------------------------------

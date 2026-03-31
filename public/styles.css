@@ -470,6 +470,7 @@ td:nth-child(3) {
   padding: 24px 0 8px;
 }
 
+
 @keyframes pulse {
   0% {
     transform: scale(1);

@@ -289,6 +289,8 @@ safeSend(ws, {
 }
 
 function handleRegister(data, ws) {
+  console.log("CAPS:", data.data?.capabilities);
+
   if (!isPrimary) {
     if (redirectToLeader(ws)) {
       log(`[${NODE_ID}] 🔀 Redirigiendo worker al líder ${currentLeader.id}`);
@@ -296,60 +298,70 @@ function handleRegister(data, ws) {
     }
   }
 
-let id = String(data.id || "").trim();
-const clientIp = ws._socket?.remoteAddress || "unknown";
-const url = String(data.url || clientIp).trim();
-
-
-
-  // 👉 Si no viene ID, generar uno automático
-if (!id) {
-  id = "worker-" + Math.random().toString(36).substring(2, 9);
-  console.log(`[${NODE_ID}] ID generado automáticamente: ${id}`);
-}
- let existingWorker = null;
-
-// 🔥 buscar si ya existe por IP (url)
-for (const w of workers.values()) {
-  if (w.url === url) {
-    existingWorker = w;
-    break;
+  let id = String(data.id || "").trim();
+  const clientIp = ws._socket?.remoteAddress || "unknown";
+const url = String(data.data?.url || clientIp).trim();
+  // Si no viene ID, reutilizar por URL o generar uno
+  if (!id) {
+    const existingByUrl = Array.from(workers.values()).find(w => w.url === url);
+    if (existingByUrl) {
+      id = existingByUrl.id;
+      console.log(`[${NODE_ID}] No ID enviado, reutilizando ID existente por URL: ${id}`);
+    } else {
+      id = "worker-" + Math.random().toString(36).substring(2, 9);
+      console.log(`[${NODE_ID}] ID generado automáticamente: ${id}`);
+    }
   }
-}
-// 🔥 limpiar duplicados por URL
-for (const [wid, w] of workers.entries()) {
-  if (w.url === url && w.ws !== ws) {
-    workers.delete(wid);
+
+  // Reutilizar por ID primero; si existe por URL y difiere, lo sincronizamos.
+  let existingWorker = workers.get(id);
+  if (!existingWorker) {
+    existingWorker = Array.from(workers.values()).find(w => w.url === url);
   }
-}
-if (existingWorker) {
-  // 🔁 reutilizar worker existente
-  id = existingWorker.id;
 
-  workers.set(id, {
-    ...existingWorker,
-    ws,
-    lastPulse: now()
-  });
+  // Eliminar posibles duplicados con mismo URL pero WS distinto (old stale sockets)
+  for (const [wid, w] of workers.entries()) {
+    if (w.url === url && w.ws !== ws) {
+      workers.delete(wid);
+    }
+  }
 
-  log(`[${NODE_ID}] 🔁 Worker reconectado: ${id}`);
-} else {
-  const existing = workers.get(id);
+  let isNewWorker = false;
+  if (existingWorker) {
+    // 🔁 reutilizar worker existente
+    id = existingWorker.id;
 
- workers.set(id, {
-  id,
-  url,
-  ws,
-  lastPulse: now(),
-  pulseCount: existing ? existing.pulseCount || 0 : 0,
-  capabilities: data.capabilities || [],
-  load: 0
-});
+    workers.set(id, {
+      ...existingWorker,
+      ws,
+      lastPulse: now(),
+      url,
+      capabilities: data.data?.capabilities || existingWorker.capabilities || [],
+      load: existingWorker.load || 0
+    });
 
-  log(`[${NODE_ID}] 🆕 Worker nuevo: ${id}`);
-}
+    log(`[${NODE_ID}] 🔁 Worker reconectado: ${id}`);
+  } else {
+    isNewWorker = true;
+    const existing = workers.get(id);
 
-  totalRegistrations++;
+    workers.set(id, {
+      id,
+      url,
+      ws,
+      lastPulse: now(),
+      pulseCount: existing ? existing.pulseCount || 0 : 0,
+      capabilities: data.data?.capabilities || [],
+      load: 0
+    });
+
+    log(`[${NODE_ID}] 🆕 Worker nuevo: ${id}`);
+  }
+
+  if (isNewWorker) {
+    totalRegistrations++;
+  }
+
   safeSend(ws, {
     type: "register-ok",
     id,
@@ -366,8 +378,8 @@ log(`[${NODE_ID}] Worker activo: ${id}`);
 
 
 function handlePulse(data, ws) {
-  let id = String(data.id || "").trim();
-  let worker = workers.get(id);
+let id = String(data.data?.id || "").trim();
+let worker = workers.get(id);
 
   // 🔥 Si no hay worker por ID, buscar por conexión (ws)
   if (!worker) {
@@ -392,10 +404,12 @@ function handlePulse(data, ws) {
   worker.ws = ws;
 
   safeSend(ws, {
-    type: "pulse-ok",
+  type: "pulse-ok",
+  data: {
     id,
     ts: new Date().toISOString()
-  });
+  }
+});
 
   pushState();
   assignQueuedTasks();
@@ -404,6 +418,14 @@ function handlePulse(data, ws) {
 // (ejemplo simple: el menos cargado que esté vivo y tenga la capacidad requerida) 
 
 function selectBestWorker(taskType) {
+
+  console.log("=================================");
+  console.log("🔍 BUSCANDO WORKER PARA:", taskType);
+
+  for (const w of workers.values()) {
+    console.log("👨‍💻 Worker:", w.id, "| Caps:", w.capabilities);
+  }
+
   const candidates = Array.from(workers.values())
     .filter(w =>
       now() - w.lastPulse <= TIMEOUT &&
@@ -411,7 +433,14 @@ function selectBestWorker(taskType) {
     )
     .sort((a, b) => (a.load || 0) - (b.load || 0));
 
-  return candidates[0] || null;
+  console.log("🎯 CANDIDATOS:", candidates.map(c => c.id));
+
+  const selected = candidates[0] || null;
+
+  console.log("✅ SELECCIONADO:", selected ? selected.id : "NINGUNO");
+  console.log("=================================");
+
+  return selected;
 }
 
 function ensureTaskHistoryLimit() {
@@ -546,7 +575,7 @@ wss.on("connection", (ws, req) => {
       const data = JSON.parse(msg.toString());
 
       switch (data.type) {
-
+        
         case "dashboard_connect":
           dashboardClients.add(ws);
           safeSend(ws, {

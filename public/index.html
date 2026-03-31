@@ -385,7 +385,29 @@
         <button class="btn-secondary" onclick="dashboard.filterWorkers('leader')">👑 Líder</button>
         <button class="btn-secondary" onclick="dashboard.filterTasks('error')">🛑 Solo errores</button>
         <input id="workerSearch" placeholder="Buscar worker..." />
-        <button class="btn-primary" onclick="dashboard.sendTestTask()">Test Task</button>
+<button class="btn-task stats" onclick="dashboard.sendTestTask('stats_compute')">
+  🔢 Stats
+</button>
+
+<button class="btn-task search" onclick="dashboard.sendTestTask('search_text')">
+  🔍 Search
+</button>
+
+<button class="btn-task latency" onclick="dashboard.sendTestTask('http_latency')">
+  🌐 Latency
+</button>
+
+<button class="btn-task math" onclick="dashboard.sendTestTask('math_compute')">
+  ➕ Math
+</button>
+
+<button class="btn-task fetch" onclick="dashboard.sendTestTask('http_fetch')">
+  📡 Fetch
+</button>
+
+<button class="btn-task vector" onclick="dashboard.sendTestTask('vector_distance')">
+  📐 Vector
+</button>        
       </div>
       <div id="backupList"></div>
     </div>
