@@ -8,16 +8,38 @@ const crypto = require("crypto");
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+// ================= CONFIGURACIÓN DEL COORDINADOR =================
 
-const PORT = Number(process.env.PORT || 3000);
-const NODE_ID = String(process.env.ID || PORT);
-const PUBLIC_URL = process.env.PUBLIC_URL || `ws://localhost:${PORT}`;
+// 📌 Puerto (desde consola o por defecto 3000)
+const PORT = Number(process.argv[2] || process.env.PORT || 3000);
+
+// 📌 Datos obligatorios del parcial (puedes cambiarlos si quieres)
+const NAME = process.env.NAME || "jhonathan";
+const CODE = process.env.CODE || "55217003";
+
+// 🆔 ID del coordinador (FORMATO OFICIAL DEL PARCIAL)
+const NODE_ID = `coordinator-${NAME}-${CODE}`;
+
+// 🌐 URL pública (ngrok o localhost)
+const PUBLIC_URL = process.argv[3] || process.env.PUBLIC_URL || `ws://localhost:${PORT}`;
+
+// 🧠 Rol del nodo (PRIMARY o BACKUP)
 let isPrimary = String(process.env.PRIMARY || "true") === "true";
+
+// ⏱️ Tiempo máximo sin pulso antes de considerar un nodo caído
 const TIMEOUT = Number(process.env.TIMEOUT || 20000);
-const FAILOVER_GRACE = 15000; // 🔥 tiempo extra al volverse primary
+
+// 🔥 Tiempo de gracia cuando el nodo se vuelve líder
+const FAILOVER_GRACE = 15000;
 let becamePrimaryAt = null;
+
+// ❤️ Intervalo de heartbeat
 const HEARTBEAT_INTERVAL = Number(process.env.HEARTBEAT_INTERVAL || 5000);
+
+// 🔄 Intervalo de sincronización con backups
 const SYNC_INTERVAL = Number(process.env.SYNC_INTERVAL || 3000);
+
+// 🧠 Prioridad del nodo (para elección de líder)
 const MY_PRIORITY = Math.floor(Math.random() * 100) + 1;
 
 
@@ -48,9 +70,8 @@ let lastSyncAt = null;
 let currentLeader = {
   id: NODE_ID,
   url: PUBLIC_URL,
-  priority: Math.floor(Math.random() * 100) + 1
+  priority: MY_PRIORITY
 };
-
 
 const now = () => Date.now();
 const uid = () => crypto.randomUUID();
@@ -181,12 +202,14 @@ function buildState() {
     currentLeader,
     totalServers: workers.size,
     activeServers,
-    totalTimeouts,
+    totalTimeouts, //
     totalRegistrations,
     lastSyncAt,
     workers: getWorkerArray(),
     backups: getBackupArray(),
+    peers: Array.from(peers.values()),
     tasks: Array.from(tasks.values())
+    
   };
 }
 
@@ -221,13 +244,20 @@ function pushState() {
 }
 
 function connectToBackup(url) {
-  if (!url || backupConnections.has(url)) return;
+if (!url || url === PUBLIC_URL) return;
+  if (backupConnections.has(url)) return;
 
   const ws = new WebSocket(url);
 
   ws.on("open", () => {
     backupConnections.set(url, ws);
     // 🤝 Handshake entre coordinadores
+    // 🔥 sincronizar peer con el socket real
+const peer = peers.get(url);
+if (peer) {
+  peer.ws = ws;
+  peer.lastSeen = Date.now();
+}
 
 safeSend(ws, {
   type: "hello",
@@ -262,6 +292,11 @@ safeSend(ws, {
   ws.on("message", (msg) => {
     try {
       const data = JSON.parse(msg.toString());
+      // 🔥 ACTUALIZAR lastSeen SI ES UN PEER
+const peer = Array.from(peers.values()).find(p => p.ws === ws);
+if (peer) {
+  peer.lastSeen = Date.now();
+}
 
       if (data.type === "sync_ack") {
         lastSyncAt = new Date().toISOString();
@@ -276,8 +311,9 @@ safeSend(ws, {
       backups.set(url, { ...b, connected: false, lastSeen: now() });
     }
     pushState();
-    setTimeout(() => connectToBackup(url), 4000);
-  });
+if (!backupConnections.has(url)) {
+  setTimeout(() => connectToBackup(url), 4000);
+}  });
 
   ws.on("error", () => {
     backupConnections.delete(url);
@@ -428,9 +464,9 @@ function selectBestWorker(taskType) {
 
   const candidates = Array.from(workers.values())
     .filter(w =>
-      now() - w.lastPulse <= TIMEOUT &&
-      w.capabilities?.includes(taskType)
-    )
+  now() - w.lastPulse <= TIMEOUT &&
+  w.capabilities?.includes(taskType) &&
+(w.ws || w.inherited))
     .sort((a, b) => (a.load || 0) - (b.load || 0));
 
   console.log("🎯 CANDIDATOS:", candidates.map(c => c.id));
@@ -589,48 +625,60 @@ case "hello":
 
   console.log(`[${NODE_ID}] 🤝 HELLO de ${id}`);
 
-  // guardar peer
- peers.set(url, {
-  id,
-  url,
-  ws,
-  lastSeen: Date.now()
-});
+  peers.set(url, {
+    id,
+    url,
+    ws,
+    lastSeen: Date.now()
+  });
 
-  // responder welcome
+  // 🔥 incluirse a sí mismo + peers
   safeSend(ws, {
     type: "welcome",
     data: {
       id: NODE_ID,
-      knownPeers: Array.from(peers.values()),
+      knownPeers: [
+        { id: NODE_ID, url: PUBLIC_URL },
+        ...Array.from(peers.values())
+      ],
       leader: currentLeader
     }
   });
 
   break;
 
- case "welcome":
+case "welcome":
   const { knownPeers, leader } = data.data;
 
   console.log(`[${NODE_ID}] 📡 WELCOME recibido`);
 
-  // guardar peers
   for (const p of knownPeers) {
-    if (p.url !== PUBLIC_URL && !peers.has(p.url)) {
-     const existing = peers.get(p.url);
+    if (p.url === PUBLIC_URL) continue;
 
-     peers.set(p.url, {
-  ...p,
-  ws: existing?.ws || null,
-  lastSeen: Date.now()
-});
+    const existing = peers.get(p.url);
 
-      // conectarse automáticamente 🔥
-      connectToBackup(p.url);
+    peers.set(p.url, {
+      id: p.id,
+      url: p.url,
+      ws: existing ? existing.ws : null,
+      lastSeen: Date.now()
+    });
+
+    // 🔥 evitar reconexión duplicada (FIX REAL)
+    const existingPeer = peers.get(p.url);
+
+    if (
+      !existingPeer ||
+      !existingPeer.ws ||
+      existingPeer.ws.readyState !== WebSocket.OPEN
+    ) {
+      if (!backupConnections.has(p.url)) {
+        connectToBackup(p.url);
+      }
     }
   }
 
-  // aceptar líder si es mejor
+  // líder
   if (leader && leader.priority > currentLeader.priority) {
     updateLeader(leader);
   }
@@ -757,8 +805,7 @@ case "task-result":
             workers = new Map(
               (incoming.workers || []).map((w) => [
                 w.id,
-                { ...w, ws: null, inherited: true }
-              ])
+{ ...w, ws: null, inherited: true, lastPulse: Date.now() }              ])
             );
             backups = new Map((incoming.backups || []).map((b) => [b.url, b]));
             tasks = new Map((incoming.tasks || []).map((t) => [t.id, t]));
@@ -901,10 +948,10 @@ setInterval(() => {
   const nowTime = Date.now();
 
   for (const [url, peer] of peers.entries()) {
-    if (nowTime - peer.lastSeen > 8000) {
-      console.log(`[${NODE_ID}] ❌ Peer caído: ${peer.id}`);
-      peers.delete(url);
-    }
+    if (nowTime - peer.lastSeen > 20000) {
+  console.log(`[${NODE_ID}] ⚠️ Peer inactivo: ${peer.id}`);
+  peer.disconnected = true; // 🔥 no borrar inmediatamente
+}
   }
 }, 4000);
 

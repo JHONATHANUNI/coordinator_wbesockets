@@ -84,6 +84,7 @@ class CoordinatorDashboard {
     this.renderTasks(data.tasks || []);
     this.renderTopology(data);
     this.renderLogs(data.log);
+    this.renderPeers(data.peers || []);
   }
 
   // --------------------------------------------
@@ -263,6 +264,23 @@ sendTestTask(type) {
     if (el) el.textContent = value;
   }
 
+
+  renderPeers(peers) {
+  const tbody = document.getElementById("peersTable");
+  if (!tbody) return;
+
+  if (!peers.length) {
+tbody.innerHTML = `<tr><td colspan="2" class="empty-row">Sin peers</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = peers.map(p => `
+    <tr>
+      <td>${p.id}</td>
+      <td>${p.url}</td>
+    </tr>
+  `).join("");
+}
   renderBackups(backups) {
     const container = document.getElementById("backupList");
     if (!container) return;
@@ -416,3 +434,4 @@ sendTestTask(type) {
 document.addEventListener("DOMContentLoaded", () => {
   window.dashboard = new CoordinatorDashboard();
 });
+ 

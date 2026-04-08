@@ -324,7 +324,21 @@ thead th {
   text-align: left;
   border-bottom: 1px solid var(--border);
 }
+/* 🔥 Peers section */
+.servers-table h2 {
+  margin: 16px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary-2);
+}
 
+#peersTable tr:hover {
+  background: rgba(124, 147, 255, 0.08);
+}
+
+#peersTable td {
+  font-weight: 600;
+}
 tbody td {
   padding: 16px 18px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
